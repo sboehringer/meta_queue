@@ -1,6 +1,6 @@
 == Description ==
 
-Does your sysadmin suck by not being able to provide a scalable Open Grid Scheduler installation? Then this project is for you. Jobs are scheduled locally and are fed to the Grid scheduler always staying under a pre-specified limit. At the moment only an Open Grid Scheduler/Sun Grid Engine backend is provided. Implementing a backend for another batch qeueing system should be straightforward.
+Does your sysadmin suck by not being able to provide a scalable Open Grid Scheduler installation? Then this project is for you. Jobs are scheduled locally and are fed to the Grid scheduler always staying under a pre-specified limit for the job count. At the moment only a Open Grid Scheduler/Sun Grid Engine backend is provided. Implementing a backend for another batch qeueing system should be straightforward.
 
 == LICENSE ==
 

@@ -41,17 +41,21 @@ HELP_TEXT
 my $sqlitedb = <<DBSCHEMA;
 	CREATE TABLE queue (
 		id integer primary key autoincrement,
-		file_name text not null
+		id_backend integer,
+		file_name text not null,
 		submission_date date not null,
 		completion_date date,
 		exit_code integer
 	);
-	CREATE TABLE dependencies (
+	CREATE INDEX queue_idx ON queue (id);
+	CREATE INDEX queue_idx2 ON queue (id_backend);
+
+	CREATE TABLE dependency (
 		id_job integer not null references queue(id),
 		id_depends_on integer not null references queue(id),
 		UNIQUE(id_job, id_depends_on)
 	);
-	CREATE INDEX dependencies_idx ON tv_item (id_job, id_depends_on);
+	CREATE INDEX dependency_idx ON dependency (id_job, id_depends_on);
 DBSCHEMA
 
 sub instantiate_db { my ($c) = @_;
@@ -82,13 +86,16 @@ sub load_db { my ($c) = @_;
 	unshift(@INC, ($schemadir, '.'));
 	load('My::Schema');
 	load('metaQueueLogic');
-	my $schema = My::Schema->new(spool => $c->{spool});
-	$schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
+	my $schema = My::Schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
+	#my $schema = My::Schema->new(spool => $c->{spool}, backendId => $c->{backend});
+	#$schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
+	$schema->spool($c->{spool});
+	$schema->backendId($c->{backend});
 	return $schema;
 }
 
 sub queue { my ($c, @commands) = @_;
-	load_db($c)->queue(@commands);
+	load_db($c)->queue([@commands], [split(/\s*,\s*/, $c->{dependsOn})]);
 }
 
 #main $#ARGV @ARGV %ENV

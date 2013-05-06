@@ -16,8 +16,6 @@ class My::Schema {
 	use Set;
 	use Data::Dumper;
 	use POSIX qw(strftime mktime);
-	use POSIX::strptime qw(strptime);
-	use utf8;
 	
 	after backendId($id) {
 		my $metaQclass = 'metaQueue'. $id;
@@ -35,7 +33,6 @@ class My::Schema {
 			};
 			my $r = $q->new_result($dict);
 			$r->insert;
-
 		}
 	};
 }

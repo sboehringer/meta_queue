@@ -22,7 +22,7 @@ $main::d = {
 	# defaults
 	config => 'meta_queue.cfg',
 	location => "$ENV{HOME}/.local/share/applications/meta_queue",
-	spool => "$ENV{HOME}/.local/share/applications/spool",
+	spool => "$ENV{HOME}/.local/share/applications/meta_queue/spool",
 	backend => 'OGS',
 };
 # options
@@ -42,13 +42,16 @@ my $sqlitedb = <<DBSCHEMA;
 	CREATE TABLE queue (
 		id integer primary key autoincrement,
 		id_backend integer,
-		file_name text not null,
+		job_path text not null,
+		job_file text not null,
+		job_options text,
 		submission_date date not null,
 		completion_date date,
 		exit_code integer
 	);
 	CREATE INDEX queue_idx ON queue (id);
 	CREATE INDEX queue_idx2 ON queue (id_backend);
+	CREATE INDEX queue_idx3 ON queue (completion_date);
 
 	CREATE TABLE dependency (
 		id_job integer not null references queue(id),
@@ -89,13 +92,14 @@ sub load_db { my ($c) = @_;
 	my $schema = My::Schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
 	#my $schema = My::Schema->new(spool => $c->{spool}, backendId => $c->{backend});
 	#$schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
-	$schema->spool($c->{spool});
+	$schema->backendConfigs($c->{backends});
+	$schema->set_spool($c->{spool});
 	$schema->backendId($c->{backend});
 	return $schema;
 }
 
 sub queue { my ($c, @commands) = @_;
-	load_db($c)->queue([@commands], [split(/\s*,\s*/, $c->{dependsOn})]);
+	load_db($c)->queue([@commands], firstDef($c->{options}, ''), [split(/\s*,\s*/, $c->{dependsOn})]);
 }
 
 #main $#ARGV @ARGV %ENV

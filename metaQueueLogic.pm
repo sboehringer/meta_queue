@@ -41,22 +41,14 @@ class My::Schema {
 			}
 			my $dict = {
 				job_path => $command,
-				job_file => $job,
+				job_script => $job,
 				job_options => $options,
 				submission_date => strftime('%Y-%m-%d %H:%M:%S', localtime),
 				dependency_id_jobs => $deps,
 			};
 			my $r = $q->new_result($dict);
 			$r->insert;
-			my $spoolFile = sprintf('%s/%07d_%s', $self->spool, $r->id, splitPathDict($command)->{base});
-			my $oneOnSuccess = copy($command, $spoolFile);
-			if (!$oneOnSuccess) {
-				Log("Spooling '$command' to '$spoolFile' failed. Rolling back.", 1);
-				my $rsDel = $self->resultset('Queue')->search({ id => $r->id });
-				$rsDel->delete;
-			} else {
-				Log(sprintf("Spooled '$command' with id %d",  $r->id), 1);
-			}
+			Log(sprintf("Spooled '%s' to job_id %d", splitPathDict($command)->{base}, $r->id), 1);
 		}
 	};
 
@@ -83,6 +75,7 @@ class My::Schema {
 
 class metaQueue {
 	has 'config' => ( isa => 'Hash', is => 'ro');
+	has 'tempDir' => ( isa => 'Str', is => 'rw');
 
 	method queue($job) {
 		die 'abstract class';
@@ -99,7 +92,15 @@ class metaQueueOGS extends metaQueue {
 
 	
 	method queue($job) {
-		Log("Hello from OGS ");
+		my $tf = tempFileName($self->tempDir. '/job');
+		writeFile($tf, $job->job_script);
+
+		Log("qsub script:\n-- Start of script --\n". $job->job_script. "\n-- End of script --\n", 5);
+		my $r = System("qsub $tf", 4, undef, { returnStdout => 'YES' } );
+		#Stdout:
+		#Your job 710 ("job_echo34686.sh") has been submitted
+		my ($jid) = ($r->{output} =~ m{Your job (\d+)}so);
+		return $jid;
 	}
 
 	method queued() {

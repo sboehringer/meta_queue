@@ -43,7 +43,7 @@ my $sqlitedb = <<DBSCHEMA;
 		id integer primary key autoincrement,
 		id_backend integer,
 		job_path text not null,
-		job_file text not null,
+		job_script text not null,	-- content of job_path
 		job_options text,
 		submission_date date not null,
 		completion_date date,
@@ -83,6 +83,17 @@ sub create_db { my ($c) = @_;
 	dump_schema($c);
 }
 
+#
+#	<i> determine setter method from class
+#
+sub meta_setter { my ($obj, $dict, $keys) = @_;
+	$keys = makeHash($keys, $keys) if (ref($keys) eq 'ARRAY');
+	for my $key (keys %$keys) {
+		$obj->$key($dict->{$keys->{$key}});
+	}
+	return $obj;
+}
+
 sub load_db { my ($c) = @_;
 	my $dbfile = "$c->{location}/meta_queue.db";
 	my $schemadir = "$c->{location}/schema";
@@ -93,8 +104,8 @@ sub load_db { my ($c) = @_;
 	#my $schema = My::Schema->new(spool => $c->{spool}, backendId => $c->{backend});
 	#$schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
 	$schema->backendConfigs($c->{backends});
-	$schema->set_spool($c->{spool});
 	$schema->backendId($c->{backend});
+	meta_setter($schema, $c, {'backends' => 'backendConfigs', 'backend' => 'backendId'});
 	return $schema;
 }
 

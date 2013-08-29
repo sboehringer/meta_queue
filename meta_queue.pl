@@ -18,20 +18,29 @@ $main::d = {
 	queue => \&queue,
 	createdb => \&create_db,
 	qstat => \&qstat,
+	push => \&push,
 
 	# defaults
 	config => 'meta_queue.cfg',
 	location => "$ENV{HOME}/.local/share/applications/meta_queue",
 	spool => "$ENV{HOME}/.local/share/applications/meta_queue/spool",
 	backend => 'OGS',
+	backendQueueLimit => 1e3,
 };
 # options
 $main::o = [
-	'dependsOn=s'
+	'dependsOn=s', 'force'
 ];
 
 $main::usage = '';
 $main::helpText = <<HELP_TEXT.$TempFileNames::GeneralHelp;
+	Examples:
+	meta_queue.pl --queue test.sh
+	# overwrite existing db
+	meta_queue.pl --createdb --force
+	# push to backends
+	meta_queue.pl --push
+
 	Options:
 	--dependsOn id1,id2,...	Hold property for jobs: wait for these jobs\
 				to finish before scheduling
@@ -47,6 +56,8 @@ my $sqlitedb = <<DBSCHEMA;
 		job_options text,
 		submission_date date not null,
 		completion_date date,
+		backend_submission_date date,
+		backend_completion_date date,
 		exit_code integer
 	);
 	CREATE INDEX queue_idx ON queue (id);
@@ -63,7 +74,8 @@ DBSCHEMA
 
 sub instantiate_db { my ($c) = @_;
 	my $dbfile = "$c->{location}/meta_queue.db";
-	return if (-e $dbfile);
+	return if (-e $dbfile && !$c->{force});
+	unlink($dbfile) if (-e $dbfile);
 	System("mkdir --parents $c->{location} ; echo '$sqlitedb\n.quit' | sqlite3 $dbfile", 2);
 }
 
@@ -89,7 +101,8 @@ sub create_db { my ($c) = @_;
 sub meta_setter { my ($obj, $dict, $keys) = @_;
 	$keys = makeHash($keys, $keys) if (ref($keys) eq 'ARRAY');
 	for my $key (keys %$keys) {
-		$obj->$key($dict->{$keys->{$key}});
+		my $dictKey = firstDef($keys->{$key}, $key);
+		$obj->$key($dict->{$dictKey});
 	}
 	return $obj;
 }
@@ -105,12 +118,18 @@ sub load_db { my ($c) = @_;
 	#$schema->connect("dbi:SQLite:dbname=$dbfile", '', '');
 	$schema->backendConfigs($c->{backends});
 	$schema->backendId($c->{backend});
-	meta_setter($schema, $c, {'backends' => 'backendConfigs', 'backend' => 'backendId'});
+	meta_setter($schema, $c,
+		{'backendConfigs' => 'backends', 'backendId' => 'backend', 'backendQueueLimit' => undef});
 	return $schema;
 }
 
 sub queue { my ($c, @commands) = @_;
 	load_db($c)->queue([@commands], firstDef($c->{options}, ''), [split(/\s*,\s*/, $c->{dependsOn})]);
+}
+
+sub push { my ($c) = @_;
+	my $s = load_db($c);
+	$s->queuePush();
 }
 
 #main $#ARGV @ARGV %ENV

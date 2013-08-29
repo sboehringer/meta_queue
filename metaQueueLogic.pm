@@ -11,7 +11,7 @@ class My::Schema {
 	has 'spool' => ( isa => 'Str', is => 'rw', writer => 'set_spool');
 	has 'backendId' => ( isa => 'Str', is => 'rw', default => 'OGS');
 	has 'backend' => ( isa => 'metaQueue', is => 'rw');
-	has 'backendQueueLimit' => ( isa => 'Int', is => 'rw', default => 1e3 );
+	has 'backendQueueLimit' => ( isa => 'Int', is => 'rw' );
 
 	# <p> dependencies
 	use TempFileNames;
@@ -54,28 +54,54 @@ class My::Schema {
 
 	# forward jobs to backend
 	method queuePush() {
+		#
 		# <p> find finished jobs
-		my @jobs = $self->backend->queued();
-		my $q = $self->resultset('Queue');
-		my @finished = 	$q->search_rs({
-			completion_date => { '==' => undef },
-			id_backend => { -in => [@jobs]}
+		#
+		my @stillRunning = $self->backend->queued();
+		my $q = $self->resultset('Queue')->search_rs({
+			backend_completion_date => undef,
+			backend_submission_date => { '!=' => undef },
+			#id_backend => { -in => [@stillRunning]}
 		});
 		# <p> update job status to finished
-		$q = $q->update({ completion_date => strftime('%Y-%m-%d %H:%M:%S', localtime)});
+		my $job;
+		for (; $job = $q->next; ) {
+			next if (defined(indexOf(\@stillRunning, $job->id_backend)));
+			Log('job  '. $job->id_backend. ' -> finished', 5);
+			my $ji = $self->backend->jobInfo($job->id_backend);
+			$job->exit_code($ji->{exit_code});
+			$job->completion_date(strftime('%Y-%m-%d %H:%M:%S', localtime));
+			$job->backend_completion_date($ji->{completion_time});
+			$job->update;
 
+		}
+		#$q = $q->update({ completion_date => strftime('%Y-%m-%d %H:%M:%S', localtime)});
+
+		#
 		# <p> submit new jobs
-		my $h = $self->resultset('Queue');
+		#
+
 		# set page size
-		$h->rows($self->backendQueueLimit - int(@jobs));
-		$h->search_rs({ completion_date => { '==' => undef } });
-		$self->backend->queue($_) for ($h->page(0));
+		Log("#jobs: ". int(@stillRunning). "; limit:". $self->backendQueueLimit, 5);
+		my $h = $self->resultset('Queue',
+			rows => $self->backendQueueLimit - int(@stillRunning)
+		)->search_rs({ backend_submission_date => undef });
+		for my $job ($h->page(0)->all) {
+			my $idBackend = $self->backend->queue($job);
+			$job->id_backend($idBackend);
+			$job->backend_submission_date(strftime('%Y-%m-%d %H:%M:%S', localtime));
+			$job->update;
+			Log('Job submitted. Backend id: '. $idBackend, 5);
+		}
 	}
 }
 
 class metaQueue {
+	use TempFileNames;
+	my $queueTempDir = tempFileName("/tmp/perl_tmp_$ENV{USER}/meta_queue");
+
 	has 'config' => ( isa => 'Hash', is => 'ro');
-	has 'tempDir' => ( isa => 'Str', is => 'rw');
+	has 'tempDir' => ( isa => 'Str', is => 'rw', default => $queueTempDir, required => 1 );
 
 	method queue($job) {
 		die 'abstract class';
@@ -92,7 +118,8 @@ class metaQueueOGS extends metaQueue {
 
 	
 	method queue($job) {
-		my $tf = tempFileName($self->tempDir. '/job');
+		Log("Temp dir: ". $self->tempDir, 5);
+		my $tf = tempFileName($self->tempDir. '/job', undef, { doTouch => 1 });
 		writeFile($tf, $job->job_script);
 
 		Log("qsub script:\n-- Start of script --\n". $job->job_script. "\n-- End of script --\n", 5);
@@ -107,4 +134,13 @@ class metaQueueOGS extends metaQueue {
 		my @jobs = (`qstat -u \\* -xml | xml sel -t -m '//JB_job_number' -v 'text()' -o ' '`
 			=~ m{(\d+)}sog);
 	}
+
+	#perl -e 'print join(":", (`qacct -j 13073` =~ m{^([a-z_]+)\s+(.*?)\s*$}moig))'
+	method jobInfo($id_backend) {
+		my %attr = (`qacct -j 13073` =~ m{^([a-z_]+)\s+(.*?)\s*$}moig);
+		print(Dumper(\%attr));
+		#<!> time format
+		return { exit_code => $attr{exit_status}, completion_time => $attr{end_time} };
+	}
+
 }

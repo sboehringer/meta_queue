@@ -58,7 +58,8 @@ my $sqlitedb = <<DBSCHEMA;
 		completion_date date,
 		backend_submission_date date,
 		backend_completion_date date,
-		exit_code integer
+		exit_code integer,
+		priority integer default 0
 	);
 	CREATE INDEX queue_idx ON queue (id);
 	CREATE INDEX queue_idx2 ON queue (id_backend);
